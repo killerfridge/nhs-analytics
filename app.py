@@ -12,7 +12,7 @@ import flask
 server = flask.Flask(__name__)
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
-app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+app = dash.Dash(__name__, external_stylesheets=external_stylesheets, server=server)
 
 MAPBOX_TOKEN = 'pk.eyJ1Ijoia2lsbGVyZnJpZGdlIiwiYSI6ImNrNGUzNnBjdTA4c2czZWxoNjJ3MjY4ajYifQ.Nf_B_iK2zst6vGvgYT6YRQ'
 px.set_mapbox_access_token(MAPBOX_TOKEN)
