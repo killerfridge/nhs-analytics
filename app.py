@@ -7,6 +7,9 @@ import dash_html_components as html
 import plotly.express as px
 import plotly.graph_objs as go
 import os
+import flask
+
+server = flask.Flask(__name__)
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
@@ -523,4 +526,4 @@ def diagnostic_filters(measure):
 
 
 if __name__ == "__main__":
-    app.run_server(port=5000, debug=True)
+    server.run()
