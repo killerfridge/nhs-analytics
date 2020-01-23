@@ -8,6 +8,7 @@ import plotly.express as px
 import plotly.graph_objs as go
 import os
 import flask
+import textwrap
 
 server = flask.Flask(__name__)
 
@@ -20,6 +21,10 @@ px.set_mapbox_access_token(MAPBOX_TOKEN)
 DATA_DIR = os.path.join('.', 'data')
 MAP_DIR = os.path.join('.', 'maps')
 
+
+def text_wrapper(text):
+    list_text = textwrap.wrap(text, width=20)
+    return '<br>'.join(list_text)
 
 def df_from_map(path):
     """Takes a geojson file and pulls just the properties into a dataframe"""
@@ -40,6 +45,7 @@ df_ccg = df_from_map(os.path.join(MAP_DIR, 'ccg.json'))
 df_local = df_from_map(os.path.join(MAP_DIR, 'nhs_local.json'))
 
 df_universe = pd.read_csv(os.path.join(DATA_DIR, 'account universe.csv'))
+df_universe['Name'] = df_universe['Name'].apply(text_wrapper)
 
 # Load the cancer dataframe
 df_cancer = pd.read_csv(os.path.join(DATA_DIR, 'cancer.csv'))
