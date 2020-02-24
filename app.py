@@ -83,13 +83,18 @@ df_waiting.columns = [
 df_waiting = pd.merge(df_waiting, df_universe, on='Organisational Code', how='inner')
 
 
-def waiting_times_map(measure, boundary, measure_type='volume', test=None, agg_func='sum'):
+def waiting_times_map(measure, boundary, measure_type='volume',
+                      test=None, agg_func='sum',
+                      start=datetime.datetime(2018, 1, 1),
+                      end=datetime.datetime(2019, 10, 1)):
     if test:
         if isinstance(test, str):
             test = [test]
         df = df_waiting[df_waiting['Diagnostic Test'].isin(test)].copy()
     else:
         df = df_waiting.copy()
+
+    df = df[(df['Period'] >= start) & (df['Period'] <= end)]
 
     df = df[[boundary_codes[boundary], boundary_names[boundary], measure, 'Total on Waiting List']]
 
@@ -219,12 +224,29 @@ boundary_names = {
     'cancer': 'Cancer Alliance Name'
 }
 
+# set the minimum and maximum dates
+min_date = datetime.date(2018, 1, 1)
+max_date = datetime.date(2019, 10, 31)
+
+# Fix the cancer data so that it has a proper period field
+df_cancer['Period'] = df_cancer.apply(lambda x: datetime.datetime(x['Year'], x['Month'], 1), axis=1)
+
 
 def filters():
     filters = html.Div(
         children=[
             html.P(
                 'NHS England analytics covers January 2018 to October 2019 and will be updated as new data comes in'),
+            dcc.DatePickerRange(
+                id='date-picker-range',
+                start_date=min_date,
+                end_date=max_date,
+                min_date_allowed=min_date,
+                max_date_allowed=max_date,
+                display_format='MMM YYYY',
+                stay_open_on_select=False,
+                number_of_months_shown=3,
+            ),
             html.H5('Map Grouping'),
             dcc.Dropdown(
                 options=[
@@ -294,6 +316,9 @@ def filters():
     return filters
 
 
+# Plot configs
+config = {'displayLogo': False}
+
 app.layout = html.Div(
     [
         html.Div(
@@ -314,11 +339,11 @@ app.layout = html.Div(
                         html.Div(
                             [
                                 html.Div(
-                                    [dcc.Graph(id='map-left')],
+                                    [dcc.Graph(id='map-left', config=config)],
                                     className='five columns',
                                 ),
                                 html.Div(
-                                    [dcc.Graph(id='map-right')],
+                                    [dcc.Graph(id='map-right', config=config)],
                                     className='five columns'
                                 )
                             ], className='row'
@@ -326,7 +351,7 @@ app.layout = html.Div(
                         html.Div(
                             [
                                 html.Div(
-                                    [dcc.Graph(id='graph-bottom')],
+                                    [dcc.Graph(id='graph-bottom', config=config)],
                                     className='ten columns'
                                 )
                             ],
@@ -335,7 +360,7 @@ app.layout = html.Div(
                         html.Div(
                             [
                                 html.Div(
-                                    [dcc.Graph(id='graph-bottom-ts')],
+                                    [dcc.Graph(id='graph-bottom-ts', config=config)],
                                     className='ten columns'
                                 )
                             ],
@@ -366,12 +391,21 @@ def update_measures(measure_type):
     Output('map-left', 'figure'),
     [Input('boundary', 'value'),
      Input('measure', 'value'),
-     Input('diagnostic-filter', 'value')]
+     Input('diagnostic-filter', 'value'),
+     Input('date-picker-range', 'start_date'), Input('date-picker-range', 'end_date')]
 )
-def boundary_update(boundary, measure, diag):
+def boundary_update(boundary, measure, diag, start, end):
+
+    # janky method for fixing dates
+    start = datetime.datetime.strptime(start, '%Y-%m-%d')
+    start = datetime.datetime(start.year, start.month, start.day)
+    end = datetime.datetime.strptime(end, '%Y-%m-%d')
+    end = datetime.datetime(end.year, end.month, end.day)
+
     if measure in cancer_measures:
         # TODO add a year filter, currently using all years for measure
         df = df_cancer[df_cancer['Measure'] == measure]
+        df = df[(df['Period'] >= start) & (df['Period'] <= end)]
         df = df.groupby([
             boundary_codes[boundary],
             boundary_names[boundary],
@@ -379,7 +413,7 @@ def boundary_update(boundary, measure, diag):
         ]).agg({'Value': 'sum'}).reset_index()
         df.columns = ['Code', 'Name', 'Measure', 'Value']
     elif measure in waiting_measures:
-        df = waiting_times_map(measure, boundary, test=diag)
+        df = waiting_times_map(measure, boundary, test=diag, start=start, end=end)
         df = df.groupby('Code').sum().reset_index()
 
     map_json = views[boundary]
@@ -426,10 +460,17 @@ def boundary_update(boundary, measure, diag):
     [Input('boundary', 'value'),
      Input('measure', 'value'),
      Input('map-left', 'selectedData'),
-     Input('diagnostic-filter', 'value')
+     Input('diagnostic-filter', 'value'),
+     Input('date-picker-range', 'start_date'), Input('date-picker-range', 'end_date')
      ]
 )
-def sites_update(boundary, measure, area, diag):
+def sites_update(boundary, measure, area, diag, start, end):
+
+    start = datetime.datetime.strptime(start, '%Y-%m-%d')
+    start = datetime.datetime(start.year, start.month, start.day)
+    end = datetime.datetime.strptime(end, '%Y-%m-%d')
+    end = datetime.datetime(end.year, end.month, end.day)
+
     if measure in cancer_measures:
         # TODO Year filter
         df = df_cancer[df_cancer['Measure'] == measure]
@@ -442,6 +483,8 @@ def sites_update(boundary, measure, area, diag):
         for point in area['points']:
             filter_points.append(point['location'])
         df = df[df[boundary_codes[boundary]].isin(filter_points)]
+
+    df = df[(df['Period'] >= start) & (df['Period'] <= end)]
 
     df = df.groupby(['Organisational Code', 'Name', 'lat', 'long']).agg({'Value': 'sum', 'Total': 'sum'}).reset_index()
     df['Percentage'] = (df['Value'] / df['Total']) * 100
@@ -500,18 +543,27 @@ def sites_update(boundary, measure, area, diag):
 @app.callback(
     Output('graph-bottom', 'figure'),
     [Input('measure', 'value'), Input('map-right', 'selectedData'),
-     Input('diagnostic-filter', 'value'), Input('diagnostic-grouping', 'value')]
+     Input('diagnostic-filter', 'value'), Input('diagnostic-grouping', 'value'),
+     Input('date-picker-range', 'start_date'), Input('date-picker-range', 'end_date')]
 )
-def bottom_graph(measure, sites, diag, grouping):
+def bottom_graph(measure, sites, diag, grouping, start, end):
     if measure in cancer_measures:
         df = df_cancer[df_cancer['Measure'] == measure]
-    if measure in df_waiting:
+    elif measure in df_waiting:
         df = waiting_times_scatter(measure, test=diag)
         if grouping == 'Ungrouped':
             df = df.groupby([
                 'Name',
                 'Period',
             ]).sum().reset_index()
+    else:
+        raise ValueError("Dataset not available")
+
+    # janky method for fixing the datetimes
+    start = datetime.datetime.strptime(start, '%Y-%m-%d')
+    start = datetime.datetime(start.year, start.month, start.day)
+    end = datetime.datetime.strptime(end, '%Y-%m-%d')
+    end = datetime.datetime(end.year, end.month, end.day)
 
     site_list = []
     if sites:
@@ -519,6 +571,9 @@ def bottom_graph(measure, sites, diag, grouping):
             site_list.append(point['customdata'])
 
     df = df[df['Name'].isin(site_list)]
+
+    # Filter based on the start and end dates
+    df = df[(df['Period'] >= start) & (df['Period'] <= end)]
 
     df['Percentage'] = df['Value'] / df['Total']
 
@@ -536,12 +591,13 @@ def bottom_graph(measure, sites, diag, grouping):
 @app.callback(
     Output('graph-bottom-ts', 'figure'),
     [Input('measure', 'value'), Input('map-right', 'selectedData'),
-     Input('diagnostic-filter', 'value')]
+     Input('diagnostic-filter', 'value'),
+     Input('date-picker-range', 'start_date'), Input('date-picker-range', 'end_date')]
 )
-def ts_graph(measure, sites, diag):
+def ts_graph(measure, sites, diag, start, end):
     if measure in cancer_measures:
         df = df_cancer[df_cancer['Measure'] == measure]
-        df['Period'] = df.apply(lambda x: datetime.date(x['Year'], x['Month'], 1), axis=1)
+        # df['Period'] = df.apply(lambda x: datetime.datetime(x['Year'], x['Month'], 1), axis=1)
     elif measure in df_waiting:
         df = waiting_times_scatter(measure, test=diag)
     else:
@@ -549,24 +605,35 @@ def ts_graph(measure, sites, diag):
 
     site_list = []
 
+    start = datetime.datetime.strptime(start, '%Y-%m-%d')
+    start = datetime.datetime(start.year, start.month, start.day)
+    end = datetime.datetime.strptime(end, '%Y-%m-%d')
+    end = datetime.datetime(end.year, end.month, end.day)
+
     if sites:
         for point in sites['points']:
             site_list.append(point['customdata'])
 
     df = df[df['Name'].isin(site_list)]
 
-    df = df.groupby(['Name', 'Period']).agg({'Value': 'sum', 'Total': 'sum'}).reset_index()
+    df = df[(df['Period'] >= start) & (df['Period'] <= end)]
 
-    print(df.head())
+    df = df.groupby(['Name', 'Period']).agg({'Value': 'sum', 'Total': 'sum'}).reset_index()
 
     fig = go.Figure(
         data=[
-            go.Bar(
+            go.Scatter(
                 x=df.loc[df['Name'] == name, 'Period'],
                 y=df.loc[df['Name'] == name, 'Value'],
                 name=name
             ) for name in site_list
-        ]
+        ],
+        layout={
+            'margin':{
+                't': 10,
+                'b': 10,
+            }
+        }
     )
 
     return fig
