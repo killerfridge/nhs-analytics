@@ -9,6 +9,7 @@ import plotly.graph_objs as go
 import os
 import flask
 import textwrap
+import datetime
 
 server = flask.Flask(__name__)
 
@@ -25,6 +26,7 @@ MAP_DIR = os.path.join('.', 'maps')
 def text_wrapper(text):
     list_text = textwrap.wrap(text, width=20)
     return '<br>'.join(list_text)
+
 
 def df_from_map(path):
     """Takes a geojson file and pulls just the properties into a dataframe"""
@@ -64,7 +66,7 @@ df_waiting = pd.read_csv(os.path.join(DATA_DIR, 'waiting.csv'),
                              'Under 6': 'int16',
                              'Over 6': 'int16',
                              'Over 13': 'int16',
-                         }, parse_dates=['Period'])
+                         }, parse_dates=['Period'], dayfirst=True)
 
 df_waiting.columns = [
     'Organisational Code',
@@ -221,6 +223,8 @@ boundary_names = {
 def filters():
     filters = html.Div(
         children=[
+            html.P(
+                'NHS England analytics covers January 2018 to October 2019 and will be updated as new data comes in'),
             html.H5('Map Grouping'),
             dcc.Dropdown(
                 options=[
@@ -323,6 +327,15 @@ app.layout = html.Div(
                             [
                                 html.Div(
                                     [dcc.Graph(id='graph-bottom')],
+                                    className='ten columns'
+                                )
+                            ],
+                            className='row'
+                        ),
+                        html.Div(
+                            [
+                                html.Div(
+                                    [dcc.Graph(id='graph-bottom-ts')],
                                     className='ten columns'
                                 )
                             ],
@@ -501,9 +514,9 @@ def bottom_graph(measure, sites, diag, grouping):
             ]).sum().reset_index()
 
     site_list = []
-
-    for point in sites['points']:
-        site_list.append(point['customdata'])
+    if sites:
+        for point in sites['points']:
+            site_list.append(point['customdata'])
 
     df = df[df['Name'].isin(site_list)]
 
@@ -521,6 +534,45 @@ def bottom_graph(measure, sites, diag, grouping):
 
 
 @app.callback(
+    Output('graph-bottom-ts', 'figure'),
+    [Input('measure', 'value'), Input('map-right', 'selectedData'),
+     Input('diagnostic-filter', 'value')]
+)
+def ts_graph(measure, sites, diag):
+    if measure in cancer_measures:
+        df = df_cancer[df_cancer['Measure'] == measure]
+        df['Period'] = df.apply(lambda x: datetime.date(x['Year'], x['Month'], 1), axis=1)
+    elif measure in df_waiting:
+        df = waiting_times_scatter(measure, test=diag)
+    else:
+        raise ValueError('Value not in list')
+
+    site_list = []
+
+    if sites:
+        for point in sites['points']:
+            site_list.append(point['customdata'])
+
+    df = df[df['Name'].isin(site_list)]
+
+    df = df.groupby(['Name', 'Period']).agg({'Value': 'sum', 'Total': 'sum'}).reset_index()
+
+    print(df.head())
+
+    fig = go.Figure(
+        data=[
+            go.Bar(
+                x=df.loc[df['Name'] == name, 'Period'],
+                y=df.loc[df['Name'] == name, 'Value'],
+                name=name
+            ) for name in site_list
+        ]
+    )
+
+    return fig
+
+
+@app.callback(
     Output('diagnostic-tests', 'style'),
     [Input('measure-type', 'value')]
 )
@@ -532,4 +584,4 @@ def diagnostic_filters(measure):
 
 
 if __name__ == "__main__":
-    server.run()
+    server.run(debug=True)
