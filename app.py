@@ -86,7 +86,7 @@ df_waiting = pd.merge(df_waiting, df_universe, on='Organisational Code', how='in
 def waiting_times_map(measure, boundary, measure_type='volume',
                       test=None, agg_func='sum',
                       start=datetime.datetime(2018, 1, 1),
-                      end=datetime.datetime(2019, 10, 1)):
+                      end=datetime.datetime(2020, 2, 1)):
     if test:
         if isinstance(test, str):
             test = [test]
@@ -226,7 +226,7 @@ boundary_names = {
 
 # set the minimum and maximum dates
 min_date = datetime.date(2018, 1, 1)
-max_date = datetime.date(2019, 10, 31)
+max_date = datetime.date(2020, 12, 31)
 
 # Fix the cancer data so that it has a proper period field
 df_cancer['Period'] = df_cancer.apply(lambda x: datetime.datetime(x['Year'], x['Month'], 1), axis=1)
